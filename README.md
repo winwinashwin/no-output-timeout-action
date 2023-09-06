@@ -15,3 +15,9 @@ See [action.yml](./action.yml) for detailed information.
 | fail_on_timeout | Whether or not to exit with non-zero code when command is timed out |      False       |
 | redirect_stderr | stderr to stdout redirection                                        |      False       |
 |     script      | Commands to be executed                                             |                  |
+
+## Outputs
+
+|  Output   | Description                                    |
+| :-------: | ---------------------------------------------- |
+| timed_out | `true` if command timed out, `false` otherwise |
