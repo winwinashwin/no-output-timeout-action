@@ -80,6 +80,8 @@ runs:
 
           wait $!
           watch_status="$?"
+
+          if [[ "$watch_status" == "1" ]]; then exit 1; fi
         done
 
         if ps -p "$usr_prog_pid" > /dev/null; then
