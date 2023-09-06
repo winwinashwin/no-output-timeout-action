@@ -1,0 +1,100 @@
+name: 'No output timeout'
+
+description: 'Set a no-output timeout to shell commands'
+
+author: 'Ashwin A Nayar (ashwin5059198@gmail.com)'
+
+inputs:
+  timeout:
+    description: 'Elapsed time the command can run without output (in seconds)'
+    default: 600  # 10 minutes
+  fail_on_timeout:
+    description: 'Whether or not to exit with non-zero code when command is timed out'
+    default: false
+  redirect_stderr:
+    description: 'Whether or not to redirect stderr of the script to stdout'
+    default: true
+  script:
+    description: 'Commands to be executed'
+
+outputs:
+  timed_out:
+    description: 'True if commands timed out, false otherwise'
+    value: ${{ steps.run-and-monitor.outputs.timed_out }}
+
+runs:
+  using: "composite"
+  steps:
+    - run: sudo apt-get update && sudo apt-get install inotify-tools
+      shell: bash
+
+    - name: Save user script as a temporary executable
+      run: |
+        cat > $RUNNER_TEMP/no_out_timeout__usr_prog << EOL
+        ${{ inputs.script }}
+        EOL
+        chmod +x $RUNNER_TEMP/no_out_timeout__usr_prog
+      shell: bash
+
+    - name: Run user program and monitor output
+      id: run-and-monitor
+      run: |
+        pidtree() (
+            declare -A CHILDS
+            while read -r P PP; do
+                CHILDS[$PP]+=" $P"
+            done < <(ps -e -o pid= -o ppid=)
+
+            walk() {
+                for i in ${CHILDS[$1]}; do
+                    walk "$i"
+                done
+                echo $1
+            }
+
+            for i in "$@"; do
+                walk "$i"
+            done
+        )
+
+        if [[ "${{ inputs.redirect_stderr }}" == "true" ]]; then
+          $RUNNER_TEMP/no_out_timeout__usr_prog > >(tee $RUNNER_TEMP/no_out_timeout__out.log) 2>&1 &
+        else
+          $RUNNER_TEMP/no_out_timeout__usr_prog > >(tee $RUNNER_TEMP/no_out_timeout__out.log) &
+        fi
+
+        usr_prog_pid="$!"
+        watch_status=0
+
+        # For inotifywait exit codes (captured in `watch_status`) refer section "EXIT STATUS" in
+        # inotifywait man page (`man inotifywait`)
+        while [[ "$watch_status" != "2" ]]; do
+          # If the user process has already exited, we don't need to watch the logfile anymore
+          ps -p "$usr_prog_pid" > /dev/null || break
+
+          /usr/bin/inotifywait \
+            -qq \
+            -t ${{ inputs.timeout }} \
+            -e 'modify,close' \
+            $RUNNER_TEMP/no_out_timeout__out.log 2>/dev/null &
+
+          wait $!
+          watch_status="$?"
+        done
+
+        if ps -p "$usr_prog_pid" > /dev/null; then
+          echo "Script timed out with no output"
+          echo "timed_out=true" >> $GITHUB_OUTPUT
+          desc="$(pidtree $usr_prog_pid)"
+
+          for d in $desc; do
+              if ps -p "$d" > /dev/null; then
+                  kill -SIGKILL "$d"
+              fi
+          done
+
+          if [[ "${{ inputs.fail_on_timeout }}" == "true" ]]; then exit 1; fi
+        else
+          echo "timed_out=false" >> $GITHUB_OUTPUT
+        fi
+      shell: /usr/bin/bash --noprofile --norc -o pipefail {0}

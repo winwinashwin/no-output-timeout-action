@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  pull_request:
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+concurrency:
+    group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+    cancel-in-progress: true
+
+jobs:
+  testing-01:
+    name: TC - Command does not timeout, verify output
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: ./
+        id: action
+        with:
+          timeout: 5
+          fail_on_timeout: true
+          script: |
+            #!/bin/bash
+
+            for i in {1..10}; do
+                echo "$i Hello world!"
+                sleep 1
+            done
+      
+      - name: Verify output
+        if: steps.action.outputs.timed_out != 'false'
+        run: exit 1
+  
+  testing-02:
+    name: TC - Command timeout, verify output
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: ./
+        id: tc02
+        with:
+          timeout: 5
+          script: |
+            #!/bin/bash
+
+            for i in {1..10}; do
+                echo "$i Hello world!"
+                sleep 1
+            done
+
+            sleep 100
+
+      - name: Verify output
+        if: steps.tc02.outputs.timed_out != 'true'
+        run: exit 1
+
+  testing-03:
+    name: TC - Command timeout with output only in stderr, no redirection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: ./
+        id: tc03
+        with:
+          timeout: 5
+          fail_on_timeout: true
+          redirect_stderr: false
+          script: |
+            #!/usr/bin/env python3
+
+            import sys
+            import time
+
+            for i in range(10):
+              print(f"{i+1} Hello world!", file=sys.stderr, flush=True)
+              time.sleep(1)
+        continue-on-error: true
+
+      - name: Verify timeout
+        if: steps.tc03.outputs.timed_out != 'true'
+        run: exit 1
+
+  testing-04:
+    name: TC - Fail on timeout if flag is set
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: ./
+        id: tc04
+        with:
+          timeout: 5
+          fail_on_timeout: true
+          redirect_stderr: false
+          script: |
+            #!/usr/bin/env python3
+
+            import sys
+            import time
+
+            for i in range(10):
+              print(f"{i+1} Hello world!", file=sys.stderr, flush=True)
+              time.sleep(1)
+        continue-on-error: true
+
+      - name: Verify failure
+        if: steps.tc04.outcome != 'failure'
+        run: exit 1
