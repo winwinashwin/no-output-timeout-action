@@ -111,3 +111,17 @@ jobs:
       - name: Verify failure
         if: steps.tc04.outcome != 'failure'
         run: exit 1
+
+  testing-05:
+    name: TC- Command failing should fail the action as well
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: ./
+        id: tc05
+        with:
+          timeout: 5
+          script: |
+            #!/bin/bash
+            exit 1
